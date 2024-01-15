@@ -1,103 +1,261 @@
-import java.security.*;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Arrays;
-import java.util.Base64;
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Scanner;
 
+/**
+ *
+ * @author Sergiu
+ */
 public class DSA {
-    public static void main(String[] args) throws Exception {
-        try (Scanner sc = new Scanner(System.in)) {
-            // Generare cheie privată și publică
-            KeyPair keyPair = generateKeyPair();
-            PrivateKey privKey = keyPair.getPrivate();
-            PublicKey pubKey = keyPair.getPublic();
 
-            // Afișare chei
-            System.out.println("Private Key: " + Base64.getEncoder().encodeToString(privKey.getEncoded()));
-            System.out.println("Public Key: " + Base64.getEncoder().encodeToString(pubKey.getEncoded()));
+    // Declarații pentru variabilele folosite în algoritm
+    public static BigInteger p;
+    public static BigInteger q;
+    public static BigInteger g;
+    public static BigInteger x;
+    public static BigInteger y;
+    public static BigInteger k;
 
-            // Reconstruiește cheile din bytes
-            KeyFactory keyFactory = KeyFactory.getInstance("DSA");
-            PrivateKey reconstructedPrivKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privKey.getEncoded()));
-            PublicKey reconstructedPubKey = keyFactory.generatePublic(new X509EncodedKeySpec(pubKey.getEncoded()));
+    // Generatorul de numere aleatoare securizat
+    private static SecureRandom rnd = new SecureRandom();
 
-            // Creare obiect Signature
-            Signature sign = Signature.getInstance("SHA256withDSA");
+    public static void main(String[] args) {
+        // Inițializarea variabilelor q, p, g, x, y, și k
+        q = getQ(16);  // Obține q (număr prim de 16 biți)
+        p = getP(q, 48);  // Obține p (număr prim de 48 biți)
+        g = generateG();  // Generează g (generator)
+        x = generateXorK();  // Generează x (cheia secretă)
+        y = generateY();  // Generează y (cheia publică)
+        k = generateXorK();  // Generează k (valoare aleatoare)
 
-            // Initializează semnătura cu cheia privată
-            sign.initSign(reconstructedPrivKey);
+        boolean menu = true;
+        BigInteger[] RS = null;
+        String plainText = null;
 
-            // Introducerea textului pentru semnare
-            String msg = Arrays.toString(getInputWithValidation(sc, "Enter text to sign: "));
-            byte[] bytes = msg.getBytes();
+        Scanner scanner = new Scanner(System.in);
 
-            // Adaugă datele la semnătură
-            sign.update(bytes);
+        while (menu) {
+            // Afișarea meniului principal
+            System.out.println("===========================================");
+            System.out.println("              Meniu Principal");
+            System.out.println("===========================================");
+            System.out.println("[1] - Creare semnătură");
+            System.out.println("[2] - Verificare semnătură");
+            System.out.println("[0] - Ieșire");
+            System.out.print("\nOpțiune>> ");
+            int option = scanner.nextInt();
 
-            // Calculează semnătura
-            byte[] signature = sign.sign();
+            switch (option) {
+                case 1: {
+                    // Crearea semnăturii
+                    System.out.println("Introduceți textul simplu:");
+                    scanner.nextLine();  // Consumă newline înainte de citirea textului
+                    plainText = scanner.nextLine();
+                    System.out.println("\nNumăr prim Q = " + q + "\nNumăr prim P = " + p
+                            + "\nNumăr G = " + g + "\nCheia secretă X = " + x + "\nCheia publică Y = " + y);
+                    RS = new BigInteger[2];
+                    RS = createSignature(plainText);
+                }
+                break;
 
-            // Afișare semnătura digitală rezultată
-            System.out.println("Digital signature: " + Base64.getEncoder().encodeToString(signature));
+                case 2: {
+                    // Verificarea semnăturii
+                    System.out.println("Introduceți textul simplu pentru verificare: ");
+                    scanner.nextLine();  // Consumă newline înainte de citirea textului
+                    plainText = scanner.nextLine();
+                    System.out.println("\nIntroduceți R");
+                    BigInteger newR = scanner.nextBigInteger();
+                    System.out.println("Introduceți S");
+                    BigInteger newS = scanner.nextBigInteger();
+                    System.out.println();
+                    if (verifySignature(newR, newS, plainText) == 0) {
+                        System.out.println("Semnătura verificată!");
+                    } else {
+                        System.out.println("Semnătura falsă!");
+                    }
+                }
+                break;
 
-            // Verificare semnătură
-            boolean isVerified = verifySignature(reconstructedPubKey, bytes, signature);
-            System.out.println("Signature verification result: " + isVerified);
-        }
-    }
+                case 0:
+                   // System.exit(0);
+                    return;
 
-    // Metodă pentru generarea cheii private și publice
-    private static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DSA");
-        keyPairGenerator.initialize(2048);
-        return keyPairGenerator.generateKeyPair();
-    }
-
-    // Metodă pentru introducerea datelor cu validare
-    private static byte[] getInputWithValidation(Scanner sc, String prompt) {
-        byte[] keyBytes = null;
-
-        while (keyBytes == null) {
-            printMessage(prompt);
-            String keyText = sc.nextLine();
-            String cleanKeyText = keyText.replaceAll("\\s", "");
-
-            if (isValidBase64(cleanKeyText)) {
-                keyBytes = Base64.getDecoder().decode(cleanKeyText);
-            } else {
-                printMessage("Invalid key format. Please enter a valid Base64-encoded key.");
+                default:
+                    System.out.println("Opțiune greșită! Încercați din nou.");
+                    break;
             }
         }
 
-        return keyBytes;
+        scanner.close();
     }
 
-    // Metodă pentru verificarea semnăturii
-    private static boolean verifySignature(PublicKey publicKey, byte[] data, byte[] signature) {
+    // Funcție pentru crearea semnăturii
+    public static BigInteger[] createSignature(String text) {
+        // Calcularea unui cod hash de 2 lungimi
+        byte[] binaryText = text.getBytes();
+        byte[] binaryHash = null;
         try {
-            Signature verifySign = Signature.getInstance("SHA256withDSA");
-            verifySign.initVerify(publicKey);
-            verifySign.update(data);
-            return verifySign.verify(signature);
-        } catch (Exception e) {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            binaryHash = md.digest(binaryText);
+        } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
-            return false;
         }
+
+        String stringHexHash = "";
+        for (byte b : binaryHash) {
+            stringHexHash += String.format("%02x", b);
+        }
+        stringHexHash = stringHexHash.substring(0, 2);
+        BigInteger numberHash = new BigInteger(stringHexHash, 16);
+
+        BigInteger R = g.modPow(k, p).mod(q); //(g^k mod p) mod q
+
+        BigInteger tempH = numberHash.add(x.multiply(R));
+        BigInteger tempPow = modularLinearEquationSolver(k, BigInteger.ONE, q);
+        BigInteger tempS = tempPow.multiply(tempH);
+        BigInteger S = tempS.mod(q);
+
+        System.out.println("R = " + R + ", S = " + S);
+
+        return new BigInteger[]{R, S};
     }
 
-    // Metodă pentru afișarea mesajelor
-    private static void printMessage(String message) {
-        System.out.print(message);
-    }
-
-    // Metodă pentru validarea formatului Base64
-    private static boolean isValidBase64(String text) {
+    // Funcție pentru verificarea semnăturii
+    public static int verifySignature(BigInteger R, BigInteger S, String text) {
+        // Calcularea unui cod hash de 2 lungimi
+        byte[] binaryText = text.getBytes();
+        byte[] binaryHash = null;
         try {
-            Base64.getDecoder().decode(text);
-            return true;
-        } catch (Exception e) {
-            return false;
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            binaryHash = md.digest(binaryText);
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+
+        String stringHexHash = "";
+        for (byte b : binaryHash) {
+            stringHexHash += String.format("%02x", b);
+        }
+        stringHexHash = stringHexHash.substring(0, 2);
+        BigInteger numberHash = new BigInteger(stringHexHash, 16);
+
+        BigInteger tempPowW = modularLinearEquationSolver(S, BigInteger.ONE, q);
+        BigInteger w = tempPowW.mod(q);
+
+        BigInteger u1 = numberHash.multiply(w).mod(q); //(H*w) mod q
+        BigInteger u2 = R.multiply(w).mod(q); //(R*w) mod q
+
+        BigInteger tempV1 = g.modPow(BigInteger.valueOf(u1.intValue()), p); //g^u1
+        BigInteger tempV2 = y.modPow(BigInteger.valueOf(u2.intValue()), p); //g^u2
+        BigInteger tempV = tempV1.multiply(tempV2).mod(p); // (g^u1 * g^u2) mod p
+        BigInteger V = tempV.mod(q);  // ((g^u1 * g^u2) mod p) mod q
+
+        return V.compareTo(R);
+    }
+
+    // Funcție pentru generarea cheii publice Y
+    private static BigInteger generateY() {
+        return g.modPow(x, p);
+    }
+
+    // Funcție pentru generarea cheii private X sau a valorii aleatoare K
+    private static BigInteger generateXorK() {
+        byte[] bytes = new byte[32 / 8];
+        rnd.nextBytes(bytes);
+
+        BigInteger q = new BigInteger(1, bytes);
+        return q.abs();
+    }
+
+    // Funcție pentru obținerea numărului prim Q
+    public static BigInteger getQ(int length) {
+        boolean isDone = true;
+
+        while (isDone) {
+            byte[] bytes = new byte[length / 8];
+            rnd.nextBytes(bytes);
+
+            BigInteger q = new BigInteger(1, bytes);
+
+            if (q.signum() == -1) q = q.negate();
+
+            if (q.isProbablePrime(20)) {
+                isDone = false;
+                return q;
+            }
+        }
+
+        return BigInteger.ONE.negate();
+    }
+
+    // Funcție pentru obținerea numărului prim P
+    public static BigInteger getP(BigInteger q, int length) {
+        BigInteger pTemp;
+
+        do {
+            byte[] bytes = new byte[length / 8];
+            rnd.nextBytes(bytes);
+
+            pTemp = new BigInteger(1, bytes);
+
+            BigInteger temp2 = pTemp.subtract(BigInteger.ONE);
+            BigInteger temp2Remeider = temp2.mod(q);
+            pTemp = pTemp.subtract(temp2Remeider);
+
+        } while (!pTemp.isProbablePrime(20));
+
+        return pTemp;
+    }
+
+    // Funcție pentru generarea generatorului G
+    public static BigInteger generateG() {
+        int h = rnd.nextInt(q.intValue());
+
+        BigInteger arg1 = p.subtract(BigInteger.ONE).divide(q); //(p − 1)/q
+
+        return BigInteger.valueOf(h).modPow(arg1, p); //h^(p − 1)/q mod p
+    }
+
+    // Funcție pentru calculul Eculid extins
+    public static EuclideVar extendedEuclide(BigInteger a, BigInteger b) {
+        EuclideVar dxy;
+
+        if (b.equals(BigInteger.ZERO)) {
+            dxy = new EuclideVar(a, BigInteger.ONE, BigInteger.ZERO);
+            return dxy;
+        }
+
+        EuclideVar dxy1 = extendedEuclide(b, a.mod(b));
+
+        dxy = new EuclideVar(dxy1.D, dxy1.Y, dxy1.X.subtract(a.divide(b).multiply(dxy1.Y)));
+
+        return dxy;
+    }
+
+    // Funcție pentru rezolvarea ecuației liniare modulare
+    public static BigInteger modularLinearEquationSolver(BigInteger a, BigInteger b, BigInteger n) {
+        EuclideVar dxy1 = extendedEuclide(a, n);
+
+        BigInteger x0 = dxy1.X.mod(n);
+
+        if (x0.compareTo(BigInteger.ONE) < 0)
+            x0 = n.add(x0);
+
+        return x0;
+    }
+
+    // Clasă internă pentru stocarea valorilor rezultate din Euclid extins
+    static class EuclideVar {
+        BigInteger D;
+        BigInteger X;
+        BigInteger Y;
+
+        public EuclideVar(BigInteger d, BigInteger x, BigInteger y) {
+            D = d;
+            X = x;
+            Y = y;
         }
     }
 }

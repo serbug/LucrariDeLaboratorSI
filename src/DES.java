@@ -533,8 +533,8 @@ public class DES {
                 pw.println("_________________________________________________________________________________");
             }
             /* Afișează textul clar original */
-            pw.println("\nCIFRUL DECRIS = " + binaryDecipher.replaceAll("(.{8})(?!$)", "$1 "));
-            pw.println("CIFRUL DECRIS SUB FORMĂ DE TEXT PLAT = " + decipher);
+            pw.println("\nTextul decriptat in biti = " + binaryDecipher.replaceAll("(.{8})(?!$)", "$1 "));
+            pw.println("Textul decriptat in format text = " + decipher);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -581,11 +581,5 @@ public class DES {
         }
         return result;
     }
-
-//    public static void main(String[] args) {
-//
-//        Encryption myDes = new Encryption();
-//        myDes.Encryption();
-//    }
 
 }
