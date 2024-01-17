@@ -57,6 +57,7 @@ public class DSA {
                             + "\nNumăr G = " + g + "\nCheia secretă X = " + x + "\nCheia publică Y = " + y);
                     RS = new BigInteger[2];
                     RS = createSignature(plainText);
+                    System.out.println("\t\t\tMesajul a fost semnat!!!");
                 }
                 break;
 
