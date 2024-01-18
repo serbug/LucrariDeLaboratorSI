@@ -9,6 +9,7 @@ import java.util.Scanner;
  *
  * @author Sergiu
  */
+
 public class RSA {
     private static long p;
     private static long q;
